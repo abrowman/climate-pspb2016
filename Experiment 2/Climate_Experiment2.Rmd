@@ -1,0 +1,240 @@
+---
+title: "Experiment 2"
+output:
+  html_document:
+    toc: true
+    toc_depth: 4
+    toc_float: true
+    theme: default
+---
+
+## (1) Description of Data File
+
+```{r include=FALSE}
+options(width=100)
+
+library(RCurl)
+library(data.table)
+library(pequod)
+library(psych)
+library(rtf)
+
+## DATA PREPARATION ##
+
+# import data
+csv <- getURL("https://raw.githubusercontent.com/abrowman/climate-pspb2016/master/Experiment%202/Climate_Experiment2.csv")
+mydata <- read.csv(textConnection(csv))
+attach(mydata)
+```
+
+The posted data for this study consists of 1 compiled, deidentified data file (total *N* recruited = `r nrow(mydata)`):
+
+* `r sum(is.na(mydata$Item1I) & is.na(mydata$Item1C))` participants non-IAT lab data were not recorded due to technical difficulties  
+* Notes on cleaning IAT data (done in Excel according to [Lane et al., 2007](http://faculty.washington.edu/agg/IATmaterials/Summary%20of%20Improved%20Scoring%20Algorithm.pdf)):
+    * `r sum(is.na(iat))` participants IAT data were either not recorded due to technical difficulties or were excluded for having more than 10% of responses <300ms
+    * Trials >10,000ms: 0\
+
+```{r include=FALSE}
+# clean data
+cgpa <- gsub("I don't know; rounds down to 3.8 I believe. Maybe 3.83\\?", "3.8", cgpa) # recode non-numerical and mistyped responses
+cgpa <- gsub("3.2\\?", "3.2", cgpa)
+cgpa <- gsub("3.2-3.3", "3.25", cgpa)
+cgpa <- as.numeric(gsub("4.93", "3.93", cgpa))
+
+# determine conditions
+cond <- factor(ifelse(!is.na(Item1I), "chilly", ifelse(!is.na(Item1C), "warm", NA)), levels = c("warm", "chilly")) # define conditions
+cond.num <- ifelse(cond=="chilly", -1, ifelse(cond=="warm", 1, NA))
+options(contrasts = c("contr.sum", "contr.poly"))
+
+# center continuous predictors
+income_c <- scale(income,scale=F,center=T)
+ladder_c <- scale(ladder,scale=F,center=T)
+```
+
+## (2) Descriptive Statistics (Table 1)
+
+**M~age~ (*SD*):** `r round(mean(Age, na.rm=T), digits=1)` (`r round(sd(Age, na.rm=T), digits=2)`)
+
+**Percentage by gender:**
+```{r echo=FALSE}
+gender <- factor(ifelse(Gender==1, "male", ifelse(Gender==2, "female", NA)))
+round(sort((table(gender, useNA="always")/nrow(mydata)*100),decreasing=F), digits=1)
+```
+
+**Percentage by race:**
+```{r echo=FALSE}
+race <- ifelse(Race==1, "Native-American", ifelse(Race==2, "Asian", ifelse(Race==3, "Black", ifelse(Race==4, "Latino", ifelse(Race==5, "Middle-Eastern", ifelse(Race==6, "Islander", ifelse(Race==7, "White", ifelse(Race==8 | Race=="7,8", "Multi-racial", NA)))))))) # sample by race: 1=native-american; 2=asian; 3=black; 4=latino; 5=middle eastern; 6=islander; 7=white; 8=multi-racial; blank=unreported
+round(sort((table(race, useNA="always")/nrow(mydata))*100,decreasing=T), digits=1)
+```
+
+**Percentage by class:**
+```{r echo=FALSE}
+class <- ifelse(Class==1, "Freshman", ifelse(Class==2, "Sophomore", ifelse(Class==3, "Junior", ifelse(Class==4, "Senior", ifelse(Class==5, "Graduate", NA)))))
+round(sort((table(class, useNA="always")/nrow(mydata))*100,decreasing=T), digits=1)
+```
+
+**Percentage by income:**
+```{r echo=FALSE}
+income.label <- ifelse(income==1, "(1) $25,000 or less", ifelse(income==2, "(2) $25,001-$40,000", ifelse(income==3, "(3) $40,001-$70,000", ifelse(income==4, "(4) $70,001-$90,000", ifelse(income==5, "(5) $90,001-$120,000", ifelse(income==6, "(6) $120,001-$150,000", ifelse(income==7, "(7) $150,001-$200,000", ifelse(income==8, "(8) $200,001-$300,000", ifelse(income==9, "(9) $300,001 or more", NA)))))))))
+round((table(income.label, useNA="always")/nrow(mydata))*100, digits=1)
+```
+
+***M*s and *SD*s for income and current GPA (cgpa):**  
+
+*Note:* The *M* and *SD* for current GPA are slightly misreported in the published paper due to typoes. Correcting those values (as done here) does not change any conclusions or central values discussed in the paper.
+```{r echo=FALSE}
+describe(data.frame(income, cgpa))[c(2,3,4)]
+```
+
+
+## (3) Random Assignment Checks
+
+**(a) Unequal variance test, *t*-test, and *M*s and *SD*s for: income**
+```{r echo=FALSE}
+var.test(income ~ cond)
+t.test(income ~ cond, var.equal = TRUE)
+describeBy(income, cond)
+```
+\
+**(b) Unequal variance test, *t*-test, and *M*s and *SD*s for: current GPA**
+```{r echo=FALSE}
+var.test(cgpa ~ cond)
+t.test(cgpa ~ cond, var.equal = TRUE)
+describeBy(cgpa, cond)
+```
+
+## (4) Main Analyses
+
+### Regressing IAT scores on condition, income, and their interaction (Table 2)
+
+#### Omnibus test
+
+**Estimates:**
+```{r echo=FALSE}
+summary(inc.regress <- lm(iat ~ income_c * cond.num))
+```
+
+**CIs:**
+```{r echo=FALSE}
+round(confint(inc.regress, level = 0.95), digits=2)
+```
+
+***f*<sup>2</sup> value (effect size) for interaction term:** `r round((summary(inc.regress)$r.squared-summary(lm(iat ~ income_c + cond.num))$r.squared)/(1-summary(inc.regress)$r.squared), digits=3)`
+
+#### Simple slopes tests
+
+**Simple slopes of condition among low- and high-SES students:**
+```{r echo=FALSE}
+contrasts(cond)
+inc.lmres <- lmres(iat ~ cond.num * income_c, mydata)
+summary(inc.slopes <- simpleSlope(inc.lmres, pred="cond.num", mod1="income_c"))
+```
+
+**CIs for simple slope among low-SES students:** `r round(inc.slopes$simple_slope[1,1] + c(-1,1)*inc.slopes$simple_slope[1,2]*qt(0.975, inc.slopes$Df), digits=2)`  
+
+**CIs for simple slope among high-SES students:** `r round(inc.slopes$simple_slope[2,1] + c(-1,1)*inc.slopes$simple_slope[2,2]*qt(0.975, inc.slopes$Df), digits=2)`\
+\
+
+**Simple slope of income in each condition (Footnote 3):**
+```{r echo=FALSE}
+contrasts(cond)
+summary(cond.slopes <- simpleSlope(inc.lmres, pred="income_c", mod1="cond.num"))
+```
+
+**CIs for simple slope among students in the chilly climate condition:** `r round(cond.slopes$simple_slope[1,1] + c(-1,1)*cond.slopes$simple_slope[1,2]*qt(0.975, cond.slopes$Df), digits=2)`  
+
+**CIs for simple slope among students in the warm climate condition:** `r round(cond.slopes$simple_slope[2,1] + c(-1,1)*cond.slopes$simple_slope[2,2]*qt(0.975, cond.slopes$Df), digits=2)`
+
+
+### Analysis with subjective SES (Footnote 2)
+
+```{r echo=FALSE}
+summary(ldr.regress <- lm(iat ~ ladder_c * cond.num))
+```
+
+
+## (5) Figures
+
+### Regressing IAT scores on condition, income, and their interaction (Figure 2)
+```{r echo=FALSE, warning=FALSE, fig.width=9, fig.height=6}
+plot.points <- data.frame(c("Chilly climate condition", "Warm climate condition", "Chilly climate condition", "Warm climate condition"), c("Low-SES", "Low-SES", "High-SES", "High-SES"), c(inc.slopes$Points[1,1], inc.slopes$Points[1,2], inc.slopes$Points[2,1], inc.slopes$Points[2,2]))
+colnames(plot.points) <- c("cond","SES","score")
+
+plot <- ggplot(data=plot.points, aes(x=cond, y=score, linetype=SES)) +
+  geom_line(aes(group = SES)) +
+  theme_bw(base_family = "Arial", base_size = 16) +
+  theme(legend.position = c(.18,.94)) +
+  theme(legend.key = element_blank()) +
+  theme(legend.title = element_blank()) +
+  scale_linetype_discrete(breaks=c("Low-SES", "High-SES"), labels=c("Low-SES students (-1 SD)", "High-SES students (+1 SD)")) +
+  theme(axis.title.x = element_blank()) +
+  theme(axis.title.y = element_text(vjust=1.3)) +
+  theme(panel.grid.minor = element_blank()) +
+  theme(panel.grid.major = element_blank()) +
+  theme(panel.border = element_blank()) +
+  theme(axis.line = element_line(color = 'black')) +
+  coord_cartesian(ylim=c(0.2, 0.7)) +
+  scale_y_continuous(paste("   Implicit association with","\n","high academic achievement"), breaks = seq(0.2, 0.7, by = .1))
+plot
+
+ggsave('Figure 2.png', width=9, height=6, unit='in', dpi=300)
+```
+
+```{r include=FALSE, warning=FALSE}
+## Scripts for auto-producing and exporting regression tables to Word format
+
+# Omnibus regression results (Table 3)
+regtable <- function(modellist, docname) {
+  sections <- list(NA)
+  colnam <- vector("list", length(modellist)*4)
+  for (i in 1:length(modellist)) {
+    assign(paste("b", i, sep = ""), signif(coef(summary(modellist[[i]])), 3))
+    assign(paste("ci", i, sep = ""), paste(get(paste("b", i, sep=""))[, 1], " [", signif(confint(modellist[[i]], level = 0.95)[,1], 3), ", ", signif(confint(modellist[[i]], level = 0.95)[,2], 3), "]", sep = ""))
+    assign(paste("t", i, sep = ""), signif(summary(modellist[[i]])$coefficients[,3], 3))
+    assign(paste("df", i, sep = ""), rep(summary(modellist[[i]])$df[2],each=4))
+    assign(paste("p", i, sep = ""), signif(summary(modellist[[i]])$coefficients[,4], 3))
+    assign(paste("section", i, sep = ""), rbind(cbind(get(paste("ci", i, sep = "")), get(paste("t", i, sep = "")), get(paste("df", i, sep = "")), get(paste("p", i, sep = "")))))
+    sections[[i]] <- get(paste("section", i, sep = ""))
+    colnam[1+(4*(i-1))] <- paste(all.vars(summary(modellist[[i]])$call)[1], ": b (95% CIs)", sep="")
+    colnam[2+(4*(i-1))] <- "t"
+    colnam[3+(4*(i-1))] <- "df"
+    colnam[4+(4*(i-1))] <- "p"
+  }
+  complete <- do.call(cbind, sections)
+  colnames(complete) <- colnam
+  rownames(complete) <- c("Intercept", labels(modellist[[i]])[1], labels(modellist[[i]])[2], labels(modellist[[i]])[3])
+  complete <- complete[-1,]
+  rtffile <- RTF(file=paste(docname, ".doc", sep=""), width=11, height=8.5, font.size=12)
+  addTable(rtffile, cbind(rownames(complete), complete), col.justify="C", header.col.justify="C")
+  done(rtffile)
+}
+models <- list(inc.regress)
+regtable(models, "Table 3 (omnibus)")
+
+# Simple slope analysis results (Table 2)
+sstable <- function(modellist, docname) {
+  sections <- list(NA)
+  colnam <- vector("list", length(modellist)*4)
+  for (i in 1:length(modellist)) {
+    assign(paste("b", i, sep = ""), signif(summary(modellist[[i]])$simple_slope))
+    assign(paste("ci", i, sep = ""), paste(get(paste("b", i, sep=""))[, 1], " [", c(signif(get(paste("b", i, sep=""))[1,1] + c(-1,1)*get(paste("b", i, sep=""))[1,2]*qt(0.975, modellist[[i]]$Df), 3)[1], signif(get(paste("b", i, sep=""))[2,1] + c(-1,1)*get(paste("b", i, sep=""))[2,2]*qt(0.975, modellist[[i]]$Df), 3)[1]), ", ", c(signif(get(paste("b", i, sep=""))[1,1] + c(-1,1)*get(paste("b", i, sep=""))[1,2]*qt(0.975, modellist[[i]]$Df), 3)[2], signif(get(paste("b", i, sep=""))[2,1] + c(-1,1)*get(paste("b", i, sep=""))[2,2]*qt(0.975, modellist[[1]]$Df), 3)[2]), "]", sep = ""))
+    assign(paste("t", i, sep = ""), signif(get(paste("b", i, sep=""))[,3], 3))
+    assign(paste("df", i, sep = ""), rep(summary(modellist[[i]])$Df,each=2))
+    assign(paste("p", i, sep = ""), signif(get(paste("b", i, sep=""))[,4], 3))
+    assign(paste("section", i, sep = ""), rbind(cbind(get(paste("ci", i, sep = "")), get(paste("t", i, sep = "")), get(paste("df", i, sep = "")), get(paste("p", i, sep = "")))))
+    sections[[i]] <- get(paste("section", i, sep = ""))
+    colnam[1+(4*(i-1))] <- paste(modellist[[i]]$nomY, ": b (95% CIs)", sep="")
+    colnam[2+(4*(i-1))] <- "t"
+    colnam[3+(4*(i-1))] <- "df"
+    colnam[4+(4*(i-1))] <- "p"
+  }
+  complete <- do.call(cbind, sections)
+  colnames(complete) <- colnam
+  rownames(complete) <- c(row.names(summary(modellist[[i]])$Points)[1], row.names(summary(modellist[[i]])$Points)[2])
+  rtffile <- RTF(file=paste(docname, ".doc", sep=""), width=11, height=8.5, font.size=12)
+  addTable(rtffile, cbind(rownames(complete), complete), col.justify="C", header.col.justify="C")
+  done(rtffile)
+}
+models.ss <- list(inc.slopes)
+sstable(models.ss, "Table 3 (simple slopes)")
+```

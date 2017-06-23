@@ -1,0 +1,94 @@
+---
+title: "Analyses Discussed in Footnote 7"
+output:
+  html_document:
+    toc: true
+    toc_depth: 4
+    toc_float: true
+    theme: default
+---
+
+## (1) Description of Data File
+
+```{r include=FALSE}
+options(width=100)
+
+library(RCurl)
+library(psych)
+library(mediation)
+
+## DATA PREPARATION ##
+
+# import data
+csv <- getURL("https://raw.githubusercontent.com/abrowman/climate-pspb2016/master/Footnote%207/Climate_Footnote7.csv")
+mydata <- read.csv(textConnection(csv))
+
+# score measures
+mydata$income <- mydata$Income
+mydata$ladder <- mydata$USldr
+mydata$ssid <- (mydata$SSID1 + mydata$SSID2 + (8-mydata$SSID3r) + mydata$SSID4 + mydata$SSID5 + (8-mydata$SSID6r))/6
+mydata$eff <- (mydata$Eff1 + mydata$Eff2 + mydata$Eff3 + mydata$Eff4 + mydata$Eff5)/5
+mydata$income_c <- scale(mydata$Income, scale=F, center=T)
+mydata$ladder_c <- scale(mydata$USldr, scale=F, center=T)
+mydata <- subset(mydata, (!is.na(Income) & !is.na(ssid)) | (!is.na(Income) & !is.na(eff)) | (!is.na(eff) & !is.na(ssid)))
+mydata <- subset(mydata, Class < 5)
+attach(mydata)
+```
+
+The posted data for this study consists of 1 compiled, deidentified data file (total *N* in analyses = `r nrow(mydata)`). *Note:* The *N* and breakdown by gender are slightly misreported in the published paper due to typos. Correcting those values (as done here) does not change any conclusions or central values discussed in the paper.
+
+
+## (2) Descriptive Statistics
+
+**M~age~ (*SD*):** `r round(mean(Age, na.rm=T), digits=1)` (`r round(sd(Age, na.rm=T), digits=2)`)
+
+**Percentage by gender:**
+```{r echo=FALSE}
+gender <- factor(ifelse(Gender==1, "male", ifelse(Gender==2, "female", NA)))
+table(gender, useNA="always")
+```
+
+**Percentage by income:**
+```{r echo=FALSE}
+income.label <- ifelse(Income==1, "(1) $25,000 or less", ifelse(Income==2, "(2) $25,001-$40,000", ifelse(Income==3, "(3) $40,001-$70,000", ifelse(Income==4, "(4) $70,001-$90,000", ifelse(Income==5, "(5) $90,001-$120,000", ifelse(Income==6, "(6) $120,001-$150,000", ifelse(Income==7, "(7) $150,001-$200,000", ifelse(Income==8, "(8) $200,001-$300,000", ifelse(Income==9, "(9) $300,001 or more", NA)))))))))
+round((table(income.label, useNA="always")/nrow(mydata))*100, digits=1)
+```
+
+***M*s and *SD*s for income, (Income), sensitivity to SES-based identity discrepancies (ssid), and academic efficacy (eff):**  
+```{r echo=FALSE}
+describe(data.frame(Age, Income, ssid, eff))[,2:4]
+```
+
+
+**Alphas and within-scale correlations:**
+
+  * **$\alpha$~SSID~** = `r round(alpha(data.frame(SSID1, SSID2, (8-SSID3r), SSID4, SSID5, (8-SSID6r)))$total$raw_alpha, digits=2)`  
+  * **$\alpha$~efficacy~** = `r round(alpha(data.frame(Eff1, Eff2, Eff3, Eff4, Eff5))$total$raw_alpha, digits=2)`  
+
+
+## (3) Analyses
+
+### Correlations
+
+```{r echo=FALSE}
+corlist <- data.frame(ssid, income, eff)
+cortable <- data.frame(round(corr.test(as.matrix(corlist))$ci[,1:3], digits=2), corr.test(as.matrix(corlist))$n[c(2,3,6)]-2, round(corr.test(as.matrix(corlist))$ci[,4], digits=4))
+colnames(cortable) <- c("lower","r","upper","df","p")
+cortable
+```
+
+### Mediation analysis
+```{r include=FALSE}
+summary(xm.model <- lm(ssid ~ income))
+summary(full.model <- lm(eff ~ income + ssid))
+```
+
+**Note:**
+
+* **ACME:** Indirect effect of IV on DV through M (path ab)
+* **ADE:** Direct effect of IV on DV (path c’)
+* **Total effect:** Total effect of IV on DV (path c)
+
+```{r echo=FALSE}
+summary(mediate(xm.model, full.model, sims = 5000, boot = TRUE, treat="income", mediator = "ssid", dropobs = TRUE))
+```

@@ -1,0 +1,45 @@
+---
+title: "Data on SES at Research Site"
+output:
+  html_document:
+    toc: false
+    theme: default
+---
+
+```{r include=FALSE}
+options(width=100)
+
+library(RCurl)
+library(psych)
+
+# import data
+csv <- getURL("https://raw.githubusercontent.com/abrowman/climate-pspb2016/master/Data%20on%20SES%20at%20Research%20Site/Climate_SESdata.csv")
+mydata <- read.csv(textConnection(csv))
+attach(mydata)
+```
+
+## (1) Income Data
+
+Household family income was assessed using 9 ranges:
+
+  1. $25,000 or less
+  2. $25,001-$40,000
+  3. $40,001-$70,000
+  4. $70,001-$90,000
+  5. $90,001-$120,000
+  6. $120,001-$150,000
+  7. $150,001-$200,000
+  8. $200,001-$300,000
+  9. $300,001 or more
+
+**Total *N* who completed this measure:** `r describe(Income)[2]`
+
+**Median income:** `r describe(Income)[5]`
+
+## (2) Subjective SES Data
+
+Subjective SES was assessed using the MacArthur Scale of Subjective SES (i.e., the SES ladder), which was completed on paper, so some participants marked between the rungs (scored #.5).
+
+**Total *N* who completed this measure:** `r describe(USldr)[2]`
+
+**Median subjective SES:** `r describe(USldr)[5]`th rung
